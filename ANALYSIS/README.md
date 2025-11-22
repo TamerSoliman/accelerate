@@ -253,6 +253,207 @@ This directory contains a deep analysis of the HuggingFace **Accelerate** librar
 
 ---
 
+### Phase 5: Library Integration Guides
+
+This phase provides comprehensive guides on integrating Accelerate with external libraries and leveraging advanced features for production ML workflows.
+
+#### **Group 1: Experiment Tracking Integration** (tracking.py)
+
+##### **12. [12_Tracker_Base_Class_Guide.md](12_Tracker_Base_Class_Guide.md)**
+**Annotated guide on the tracker abstraction pattern:**
+- GeneralTracker base class architecture
+- 9 tracker implementations (TensorBoard, WandB, MLflow, Comet ML, Aim, ClearML, DVCLive, SwanLab, Trackio)
+- @on_main_process decorator pattern
+- Common patterns across all trackers
+
+**Key Insight:** Strategy pattern enables switching between 9 tracking platforms with single-line code changes while maintaining identical logging APIs.
+
+##### **13. [13_Experiment_Tracking_Tutorial.md](13_Experiment_Tracking_Tutorial.md)**
+**Practical tutorial on experiment tracking:**
+- Quick start with single tracker
+- Multi-tracker logging (TensorBoard + WandB simultaneously)
+- Tracker-specific features (WandB tables, MLflow artifacts)
+- Distributed training considerations
+- Complete training loop examples
+
+**Key Insight:** Multi-tracker logging provides redundancy (local + cloud) with zero code duplication - single `accelerator.log()` call logs to all trackers.
+
+##### **14. [14_Tracker_Feature_Comparison.md](14_Tracker_Feature_Comparison.md)**
+**Comprehensive feature matrix:**
+- Core features comparison (scalars, images, tables, artifacts)
+- Infrastructure requirements (cloud vs local, offline mode)
+- Advanced features (model registry, hyperparameter sweeps)
+- Cost comparison and recommendations
+
+**Key Insight:** TensorBoard (local, free) + WandB (cloud, collaboration) is the most popular combination, providing best of both worlds.
+
+##### **15. [15_Multi_Tracker_Best_Practices.md](15_Multi_Tracker_Best_Practices.md)**
+**Strategies for multi-tracker logging:**
+- Recommended tracker combinations
+- Per-tracker configuration
+- Performance optimization (async logging, selective tracking)
+- Cost optimization strategies
+
+**Key Insight:** Log all metrics to local TensorBoard (fast), log only summaries to cloud WandB (reduce bandwidth/cost), use MLflow for production model registry.
+
+---
+
+#### **Group 2: Large Model Handling** (big_modeling.py)
+
+##### **16. [16_Large_Model_Loading_Tutorial.md](16_Large_Model_Loading_Tutorial.md)**
+**Loading models larger than GPU memory:**
+- Meta device initialization (`init_empty_weights`)
+- Device map strategies (`auto`, `balanced`, custom)
+- `load_checkpoint_and_dispatch` workflow
+- CPU and disk offloading patterns
+- Transformers integration
+
+**Key Insight:** Load 70B models (140GB FP16) on 2× 24GB GPUs + CPU by distributing layers across devices without ever loading full model in memory.
+
+##### **17. [17_Device_Map_Strategies_Guide.md](17_Device_Map_Strategies_Guide.md)**
+**Device mapping algorithms:**
+- Auto strategies (auto, balanced, balanced_low_0, sequential)
+- Manual device maps
+- Memory specification and headroom calculation
+- no_split_module_classes configuration
+
+**Key Insight:** `balanced_low_0` strategy reserves more space on GPU 0 for activations, crucial when GPU 0 handles input processing.
+
+##### **18. [18_CPU_Offloading_Patterns.md](18_CPU_Offloading_Patterns.md)**
+**CPU offloading for memory-constrained inference:**
+- Full model offload vs selective layer offload
+- Sequential offload (pipeline pattern)
+- Performance trade-offs (10-50× slower, 90%+ memory savings)
+
+**Key Insight:** CPU offloading trades speed for memory - use for models that absolutely won't fit in GPU, or for testing large models before scaling up hardware.
+
+##### **19. [19_Transformers_Integration.md](19_Transformers_Integration.md)**
+**HuggingFace Transformers native integration:**
+- Single-line loading with `device_map="auto"`
+- Quantization integration (8-bit, 4-bit)
+- Key parameters (torch_dtype, max_memory)
+- Multi-GPU inference patterns
+
+**Key Insight:** Transformers `from_pretrained(device_map="auto")` internally calls Accelerate's init_empty_weights + infer_auto_device_map + load_checkpoint_and_dispatch.
+
+---
+
+#### **Group 3: BitsAndBytes Quantization** (bnb.py)
+
+##### **20. [20_Quantization_Tutorial.md](20_Quantization_Tutorial.md)**
+**8-bit and 4-bit quantization:**
+- 8-bit quantization (87.5% memory reduction, ~99% quality)
+- 4-bit quantization (93.75% reduction, ~95% quality)
+- NF4 vs FP4 quantization types
+- Double quantization for additional savings
+- QLoRA training pattern
+
+**Key Insight:** 4-bit NF4 quantization reduces 70B model from 140GB to ~35GB with minimal quality loss, enabling single-GPU fine-tuning via QLoRA.
+
+##### **21. [21_Quantization_Config_Comparison.md](21_Quantization_Config_Comparison.md)**
+**BitsAndBytesConfig parameters:**
+- load_in_4bit vs load_in_8bit trade-offs
+- bnb_4bit_quant_type (nf4 vs fp4)
+- bnb_4bit_compute_dtype (float16 vs bfloat16)
+- Optimal configs for inference vs fine-tuning
+
+**Key Insight:** BF16 compute dtype provides better numerical stability than FP16 with same memory footprint - always prefer for 4-bit quantization.
+
+##### **22. [22_Quantization_Memory_Analysis.md](22_Quantization_Memory_Analysis.md)**
+**Memory breakdown by model size:**
+- 7B, 13B, 70B parameter models across precisions
+- Activation memory scaling (batch size × sequence length)
+- Optimizer memory (AdamW = 2× model size)
+- Real-world hardware requirements
+
+**Key Insight:** Llama-2-70B in 4-bit fits on single A100 80GB (~35GB model + activations), enabling fine-tuning on consumer-grade hardware.
+
+##### **23. [23_PEFT_LoRA_Integration.md](23_PEFT_LoRA_Integration.md)**
+**QLoRA pattern (quantization + LoRA):**
+- Loading base model in 4-bit
+- Adding LoRA adapters (1% of parameters trainable)
+- Training with minimal memory (70B model on 48GB GPU)
+- Saving and loading fine-tuned adapters
+
+**Key Insight:** QLoRA enables fine-tuning 70B models on single consumer GPU by combining 4-bit quantization (4× reduction) with LoRA (99% parameter freezing).
+
+---
+
+#### **Group 4: Hook System** (hooks.py)
+
+##### **24. [24_Hook_Execution_Deep_Dive.md](24_Hook_Execution_Deep_Dive.md)**
+**Hook lifecycle and execution flow:**
+- ModelHook base class (init, pre_forward, post_forward, detach)
+- Built-in hooks (AlignDevicesHook, CpuOffload, LayerwiseCastingHook)
+- SequentialHook for combining multiple hooks
+
+**Key Insight:** Hooks intercept forward passes to modify inputs/outputs, enabling CPU offloading and device alignment without changing model code.
+
+##### **25. [25_Custom_Hook_Tutorial.md](25_Custom_Hook_Tutorial.md)**
+**Creating custom hooks:**
+- Logging hook (track input/output shapes)
+- Gradient clipping hook
+- Memory tracking hook
+- Integration with existing models
+
+**Key Insight:** Custom hooks enable non-invasive model instrumentation for debugging, profiling, and optimization without modifying model architecture.
+
+##### **26. [26_CPU_Offload_Strategies.md](26_CPU_Offload_Strategies.md)**
+**CPU offloading strategies:**
+- Full model offload (minimal GPU, 10-50× slower)
+- Selective layer offload (partial GPU usage)
+- Sequential offload (pipeline pattern)
+
+**Key Insight:** Offload only layers that don't fit in GPU while keeping critical layers (attention, final layers) on GPU for better speed/memory balance.
+
+##### **27. [27_Hook_Performance_Analysis.md](27_Hook_Performance_Analysis.md)**
+**Performance trade-offs:**
+- Overhead measurement (timing hooks)
+- Memory vs speed analysis
+- Optimization tips (minimize CPU↔GPU transfers, use pinned memory)
+
+**Key Insight:** AlignDevicesHook has ~1% overhead, CpuOffload has 10-50× overhead due to data transfers - profile before deploying hooks in production.
+
+---
+
+#### **Group 5: Model Utilities** (modeling.py)
+
+##### **28. [28_Device_Map_Inference_Guide.md](28_Device_Map_Inference_Guide.md)**
+**Device map inference algorithm:**
+- Memory calculation per parameter
+- Module-level aggregation
+- Sequential device allocation
+- Respecting no_split_module_classes
+
+**Key Insight:** Device map algorithm calculates memory per layer, fills GPU 0 until max_memory reached, then GPU 1, then CPU - never splits modules in no_split_module_classes.
+
+##### **29. [29_Sharded_Checkpoint_Tutorial.md](29_Sharded_Checkpoint_Tutorial.md)**
+**Sharded checkpoint format:**
+- Single file vs sharded checkpoint trade-offs
+- Loading sharded checkpoints
+- Index JSON structure
+- Creating sharded checkpoints
+
+**Key Insight:** Sharded checkpoints split large models across multiple 2GB files for faster parallel loading and avoiding filesystem size limits.
+
+##### **30. [30_Tied_Parameters_Guide.md](30_Tied_Parameters_Guide.md)**
+**Tied parameter handling:**
+- Detection (find_tied_parameters)
+- Device map constraints (tied params must stay on same device)
+- Retying after checkpoint load
+
+**Key Insight:** Input/output embeddings often tied to reduce parameters - device maps must keep tied parameters on same device or model will fail.
+
+##### **31. [31_Memory_Efficient_Loading.md](31_Memory_Efficient_Loading.md)**
+**Complete memory-efficient workflow:**
+- Meta device → device map → direct loading
+- Memory timeline comparison (traditional vs efficient)
+- Offload state dict for extreme memory limits
+
+**Key Insight:** Memory-efficient loading never loads full model in RAM - loads each shard directly to target device, reducing peak memory from 140GB to ~22GB for 70B model.
+
+---
+
 ## Key Findings
 
 ### 1. **The Central Role of prepare()**
